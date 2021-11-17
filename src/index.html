@@ -1,0 +1,70 @@
+<html>
+
+<head>
+    <title>Leaflet Webpack</title>
+<style>
+.flex-container {
+  display: flex;
+  height: 95vh;
+  margin: 0px;
+  padding: 0px;
+  border: 0px;
+}
+
+.flex-map {
+  width: 66%;
+  margin: 0px;
+  padding: 0px;
+  border: 0px;
+}
+.flex-editor {
+  width: 34%;
+  margin: 0px;
+  padding: 0px;
+  border: 0px;
+  /* background-color: #f1f1f1;
+  margin: 10px;
+  padding: 20px;
+  font-size: 30px; */
+}
+.message {
+    position: absolute;
+    left: 30%;
+    top: 2%;
+    z-index: 1000;
+}
+</style>
+        
+</head>
+
+<body>
+    <div class="message hidden">
+        Error message
+    </div>
+    <div class="flex-container">
+        <div class="flex-map">
+            <div id="map" style="width: 100%; height: 100%;""></div>
+        </div>
+        <div class="flex-editor">
+            <div class="cm-fullscreen-container cm-flex-container">
+                <div class="cm-toolbar cm-flex-child-fixed">
+                    <select id="operation">
+                        <option value="xz-order">xz-order</option>
+                        <option value="xz-range">xz-range</option>
+                    </select>
+                    <button id="compute">compute</button>
+                </div>
+                <div class="cm-body cm-flex-child-grow">
+                    <div id="editor"></div>
+                    <!-- <textarea id="editor"></textarea> -->
+                </div>
+                <div class="cm-footer cm-flex-child-fixed">
+                    <textarea id="result">result</textarea>
+                </div>
+            </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
