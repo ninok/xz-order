@@ -115,36 +115,7 @@ const computeHandler = () => {
   })
 }
 
-computeButton.addEventListener('click', computeHandler);
-
-
-
-editor.on('change', changeHandler);
-
-// add Leaflet-Geoman controls with some options to the map  
-map.pm.addControls({
-  position: 'topleft',
-  drawCircle: false,
-});
-
-map.on('pm:drawstart', (e) => {
-  console.log('pm:drawstart');
-  const layer = e.workingLayer;
-  layer.on('pm:update', (e) => {
-    console.log('pm:update');
-  });
-  
-  layer.on('pm:disable', (e) => {
-    console.log('pm:disable');
-  });
-  
-  layer.on('pm:edit', (e) => {
-    console.log('pm:edit');
-  });
-});
-
-map.on('pm:drawend', (e) => {
-  console.log('pm:drawend');
+function updateTextEditor() {
   const geoJson = (map.pm.getGeomanLayers(true) as L.FeatureGroup).toGeoJSON() as FeatureCollection;
 
   geoJson.features = geoJson.features.filter((feature)=> {
@@ -154,5 +125,50 @@ map.on('pm:drawend', (e) => {
   editor.off('change', changeHandler);
   editor.setValue(JSON.stringify(geoJson, undefined, 4));
   editor.on('change', changeHandler);
+}
+
+computeButton.addEventListener('click', computeHandler);
+
+editor.on('change', changeHandler);
+
+// add Leaflet-Geoman controls with some options to the map  
+map.pm.addControls({
+  position: 'topleft',
+  drawCircle: false,
+});
+
+// Register events to keep editor and map in sync.
+map.on('pm:globaleditmodetoggled', (e) => {
+  console.log('pm:globaleditmodetoggled');
+  e.map.eachLayer((layer) => {
+    if (e.enabled) {
+      // layer.on('pm:dragend', (e)=>{
+      //   console.log('pm:dragend');
+      // })
+    } else {
+      // layer.off('pm:dragend');
+      updateTextEditor();
+    }
+  })
+});
+
+map.on('pm:globaldragmodetoggled', (e) => {
+  console.log('pm:globaldragmodetoggled');
+  e.map.eachLayer((layer) => {
+    if (e.enabled) {
+      layer.on('pm:dragend', (e)=>{
+        console.log('pm:dragend');
+        updateTextEditor();
+      })
+    } else {
+      layer.off('pm:dragend');
+    }
+  })
+});
+
+
+map.on('pm:drawend', (e) => {
+  console.log('pm:drawend');
+  updateTextEditor();
 });
 
