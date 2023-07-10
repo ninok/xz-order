@@ -4,7 +4,7 @@ import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import * as L from 'leaflet';
 import '@geoman-io/leaflet-geoman-free';
 
-import {FeatureCollection} from  'geojson';
+import {FeatureCollection, Polygon} from  'geojson';
 
 import CodeMirror from 'codemirror';
 import 'codemirror/lib/codemirror.css';
@@ -42,8 +42,8 @@ const basemap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/service
 });
 basemap.addTo(map);
 
-// const marker = L.marker(defaultCenter);
-// marker.addTo(map);
+let inputLayer : L.LayerGroup;
+let resultLayer : L.FeatureGroup | undefined;
 
 const changeHandler = (instance: CodeMirror.Editor, change : CodeMirror.EditorChange) => {
   console.log('change');
@@ -58,10 +58,7 @@ const changeHandler = (instance: CodeMirror.Editor, change : CodeMirror.EditorCh
     }
   });
 
-  // Add each feature as a separate layer
-  geojson.features.forEach(feature => {
-    L.geoJSON(feature).addTo(map);
-  })
+  L.geoJSON(geojson).addTo(map);
 }
 
 const computeButton = document.getElementById("compute") as HTMLButtonElement;
@@ -81,9 +78,7 @@ const computeHandler = () => {
   const geojson = JSON.parse(editor.getValue()) as FeatureCollection;
 
   // Add the editor input again.
-  geojson.features.forEach(feature => {
-    L.geoJSON(feature).addTo(map);
-  })
+  inputLayer = L.geoJSON(geojson).addTo(map);
 
   const operation = operationSelect.selectedOptions[0].text;
 
@@ -109,18 +104,49 @@ const computeHandler = () => {
         feature.properties["isResult"] = true;
       }
     }
-    const union = L.geoJSON(json);
-    union.setStyle({ color: 'red' }).addTo(map);
+    resultLayer = L.geoJSON(json);
+    resultLayer.pm.setOptions({
+      allowEditing: false,
+      draggable: false
+    })
+    resultLayer.setStyle({ color: 'red' }).addTo(map);
+    resultLayer.bringToBack();
     resultTextArea.value = JSON.stringify(json, undefined, 4);
+    for(const feature of geoJson.features) {
+      if (feature.geometry.type == 'Polygon' && feature.properties?.sequence) {
+        const point = feature.geometry.coordinates[0][0];
+        const marker = L.marker([point[1], point[0]], {
+          textMarker: true,
+          text: feature.properties.sequence,
+        }).addTo(resultLayer);
+        marker.pm.setOptions({
+          allowEditing: false,
+          draggable: false    
+        });
+      }
+    }
+  }).catch(reason => {
+    if (resultLayer) {
+      map.removeLayer(resultLayer);
+      resultLayer = undefined;
+    }
   })
 }
 
 function updateTextEditor() {
-  const geoJson = (map.pm.getGeomanLayers(true) as L.FeatureGroup).toGeoJSON() as FeatureCollection;
+  if (resultLayer) {
+    map.removeLayer(resultLayer);
+  }
+  
+  const geoJson = map.pm.getGeomanLayers(true).toGeoJSON() as FeatureCollection;
 
   geoJson.features = geoJson.features.filter((feature)=> {
     return !(feature.properties?.isResult === true);
   });
+
+  if (resultLayer) {
+    map.addLayer(resultLayer);
+  }
 
   editor.off('change', changeHandler);
   editor.setValue(JSON.stringify(geoJson, undefined, 4));
@@ -146,6 +172,8 @@ map.on('pm:globaleditmodetoggled', (e) => {
       //   console.log('pm:dragend');
       // })
     } else {
+      // There are so many events to listen to,
+      // so for now we just update the editor when edit mode is toggled off again.
       // layer.off('pm:dragend');
       updateTextEditor();
     }
@@ -166,6 +194,19 @@ map.on('pm:globaldragmodetoggled', (e) => {
   })
 });
 
+map.on('pm:globalremovalmodetoggled', (e) => {
+  console.log('pm:globaldragmodetoggled');
+  e.map.eachLayer((layer) => {
+    if (e.enabled) {
+      layer.on('pm:remove', (e)=>{
+        console.log('pm:remove');
+        updateTextEditor();
+      })
+    } else { 
+      layer.off('pm:remove');
+    }
+  })
+});
 
 map.on('pm:drawend', (e) => {
   console.log('pm:drawend');
