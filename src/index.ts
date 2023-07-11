@@ -65,6 +65,11 @@ const computeButton = document.getElementById("compute") as HTMLButtonElement;
 const operationSelect = document.getElementById("operation") as HTMLSelectElement;
 const resultTextArea = document.getElementById("result") as HTMLTextAreaElement;
 
+const operationColors = new Map([
+  ['xz-order','red'],
+  ['xz-range', 'yellow']
+]);
+
 
 const computeHandler = () => {
   // Clear map first, especially previous results
@@ -80,7 +85,7 @@ const computeHandler = () => {
   // Add the editor input again.
   inputLayer = L.geoJSON(geojson).addTo(map);
 
-  const operation = operationSelect.selectedOptions[0].text;
+  const operation = operationSelect.selectedOptions[0].value;
 
   console.log(`Computing ${operation}`);
   fetch(
@@ -94,24 +99,16 @@ const computeHandler = () => {
     }
   ).then(value => value.json()).then(json => {
     const geoJson = json as FeatureCollection;
-    // Mark the features that are coming from the REST API to be able to filter them out later.
-    for(const feature of geoJson.features) {
-      if (!feature.properties) {
-        feature.properties = {
-          isResult: true
-        }
-      } else {
-        feature.properties["isResult"] = true;
-      }
-    }
+    resultTextArea.value = JSON.stringify(json, undefined, 4);
+
     resultLayer = L.geoJSON(json);
     resultLayer.pm.setOptions({
       allowEditing: false,
       draggable: false
     })
-    resultLayer.setStyle({ color: 'red' }).addTo(map);
+    const color = operationColors.get(operation) ?? 'red';
+    resultLayer.setStyle({ color }).addTo(map);
     resultLayer.bringToBack();
-    resultTextArea.value = JSON.stringify(json, undefined, 4);
     for(const feature of geoJson.features) {
       if (feature.geometry.type == 'Polygon' && feature.properties?.sequence) {
         const point = feature.geometry.coordinates[0][0];
@@ -121,11 +118,15 @@ const computeHandler = () => {
         }).addTo(resultLayer);
         marker.pm.setOptions({
           allowEditing: false,
-          draggable: false    
+          draggable: false
         });
+        const element = marker.getElement()
+        if(element)
+          element.style.fontSize = '6px';
       }
     }
   }).catch(reason => {
+    // TODO: Set error message
     if (resultLayer) {
       map.removeLayer(resultLayer);
       resultLayer = undefined;
@@ -139,10 +140,6 @@ function updateTextEditor() {
   }
   
   const geoJson = map.pm.getGeomanLayers(true).toGeoJSON() as FeatureCollection;
-
-  geoJson.features = geoJson.features.filter((feature)=> {
-    return !(feature.properties?.isResult === true);
-  });
 
   if (resultLayer) {
     map.addLayer(resultLayer);

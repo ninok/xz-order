@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 
-import { FeatureCollection } from 'geojson';
+import { BBox, FeatureCollection } from 'geojson';
 import wkx, { Point } from 'wkx';
 
 import express from 'express';
@@ -10,46 +10,6 @@ const app = express();
 app.use(bodyParser.json());
 app.use(express.static('dist'));
 
-function morton_code(x : number, y: number, level : number) {
-    // Map point to [-1, 1] range
-    x = x / 180
-    y = y / 90
-
-    // +---+---+
-    // | 2 | 3 |
-    // +---+---+
-    // | 0 | 1 |
-    // +---+---+
-    let sequence = ""
-    for (let i=0; i < level; ++i) {
-        if (x <= 0 && y <= 0) {
-            sequence += "0"
-            x = x * 2 + 1;
-            y = y * 2 + 1;
-            continue;
-        }
-        if (x <= 0 && y > 0) {
-            sequence += "2"
-            x = x * 2 + 1;
-            y = y * 2 - 1;
-            continue;
-        }
-        if (x > 0 && y <= 0) {
-            sequence += "1"
-            x = x * 2 - 1;
-            y = y * 2 + 1;
-            continue;
-        }
-        if (x > 0 && y > 0) {
-            sequence += "3"
-            x = x * 2 - 1;
-            y = y * 2 - 1;
-            continue;
-        }
-    }
-    return sequence;
-}
-
 interface Box{
     xmin : number;
     xmax : number;
@@ -57,15 +17,36 @@ interface Box{
     ymax: number;
 }
 
-function xz_index(box_:Box) {
-    // Map point to [-1, 1] range
+function bbox(points : wkx.Point[]) {
     const box : Box = {
-        xmin: box_.xmin / 180,
-        xmax: box_.xmax / 180,
-        ymin: box_.ymin / 90,
-        ymax: box_.ymax / 90,
+        xmin: Number.MAX_VALUE,
+        ymin: Number.MAX_VALUE,
+        xmax: -Number.MAX_VALUE,
+        ymax: -Number.MAX_VALUE
+    };
+
+    for (const point of points) {
+        if (point.x < box.xmin) box.xmin = point.x;
+        if (point.x > box.xmax) box.xmax = point.x;
+        if (point.y < box.ymin) box.ymin = point.y;
+        if (point.y > box.ymin) box.ymax = point.y;
     }
 
+    return box;
+}
+
+function normalize_bbox(box : Box) {
+    return {
+        xmin: box.xmin / 180,
+        xmax: box.xmax / 180,
+        ymin: box.ymin / 90,
+        ymax: box.ymax / 90,
+    }
+}
+
+function xz_index(box_:Box) {
+    // Map point to [-1, 1] range
+    const box = normalize_bbox(box_);
     const cell: Box = {
         xmin: -1, xmax:1, ymin:-1, ymax:1
     }
@@ -113,26 +94,9 @@ function xz_index(box_:Box) {
 
 function xzindex(geometry : wkx.Geometry) {
     if (geometry instanceof wkx.Point) {
-        return morton_code(geometry.x, geometry.y, 20);
+        return xz_index(bbox([geometry]));
     } else if (geometry instanceof wkx.Polygon) {
-        const box : Box = {
-            xmin: Number.MAX_VALUE,
-            ymin: Number.MAX_VALUE,
-            xmax: -Number.MAX_VALUE,
-            ymax: -Number.MAX_VALUE
-        };
-
-        for (const point of geometry.exteriorRing) {
-            if (point.x < box.xmin) box.xmin = point.x;
-            if (point.x > box.xmax) box.xmax = point.x;
-            if (point.y < box.ymin) box.ymin = point.y;
-            if (point.y > box.ymin) box.ymax = point.y;
-        }
-
-        // const max_d = Math.max( Math.abs(xmax-xmin)/180, Math.abs(ymax-ymin)/90);
-        // const l1 = Math.floor(Math.log(max_d) / Math.log(0.5));
-
-        return xz_index(box);
+        return xz_index(bbox(geometry.exteriorRing));
     }
     return "";
 }
@@ -208,6 +172,151 @@ app.post('/xz-order', async (req, response) => {
             },
             geometry: border_geom.toGeoJSON()
         });
+    }
+
+    response.send(JSON.stringify({
+        type: "FeatureCollection",
+        features
+    }));
+});
+
+// Check if cell is completely inside box
+function fully_inside(cell : Box, box: Box) {
+    const xmax = cell.xmax + (cell.xmax - cell.xmin);
+    const ymax = cell.ymax + (cell.ymax - cell.ymin);
+    return box.xmin <= cell.xmin && box.xmax >= xmax && box.ymin <= cell.ymin && box.ymax >= ymax;
+}
+
+// Check if cell overlaps box
+function overlaps(cell : Box, box: Box) {
+    const xmax = cell.xmax + (cell.xmax - cell.xmin);
+    const ymax = cell.ymax + (cell.ymax - cell.ymin);
+    if (cell.xmin >= box.xmax) {
+        // right
+        return false;
+    }
+    if (xmax <= box.xmin) {
+        // left
+        return false;
+    }
+    if (cell.ymin >= box.ymax) {
+        // top
+        return false;
+    }
+    if (ymax <= box.ymin) {
+        // bottom
+        return false;
+    }
+
+    return true;
+}
+
+
+interface Cell {
+    box : Box;
+    sequence : string;
+}
+
+interface Range {
+    start:string;
+    end: string;
+}
+
+function sequence_ranges(box : Box) {
+    const window = normalize_bbox(box);
+    const startCell : Cell = {
+        box : {
+            xmin: -1, xmax:1, ymin:-1, ymax:1
+        },
+        sequence : ""
+    }
+    const cells = [ startCell ];
+    
+    const sequence_ranges : Array<Range> = []
+    while(cells.length > 0) {
+        const cell = cells.shift()!;
+        if (fully_inside(cell.box, window)) {
+            sequence_ranges.push({start:cell.sequence, end: cell.sequence + '*'});
+        } else if (overlaps(cell.box, window)){
+            sequence_ranges.push({start:cell.sequence, end: cell.sequence});
+            const xmid = (cell.box.xmax + cell.box.xmin)/2;
+            const ymid = (cell.box.ymax + cell.box.ymin)/2;
+   
+            if (cell.sequence.length < 20) {
+                // +---+---+
+                // | 2 | 3 |
+                // +---+---+
+                // | 0 | 1 |
+                // +---+---+
+                cells.push({
+                    box: {
+                        xmin: cell.box.xmin,
+                        xmax: xmid,
+                        ymin: cell.box.ymin,
+                        ymax: ymid
+                    },
+                    sequence: cell.sequence + "0"
+                },
+                {
+                    box: {
+                        xmin: xmid,
+                        xmax: cell.box.xmax,
+                        ymin: cell.box.ymin,
+                        ymax: ymid
+                    },
+                    sequence: cell.sequence + "1"
+                },
+                {
+                    box: {
+                        xmin: cell.box.xmin,
+                        xmax: xmid,
+                        ymin: ymid,
+                        ymax: cell.box.ymax,
+                    },
+                    sequence: cell.sequence + "2"
+                },
+                {
+                    box: {
+                        xmin: xmid,
+                        xmax: cell.box.xmax,
+                        ymin: ymid,
+                        ymax: cell.box.ymax,
+                    },
+                    sequence: cell.sequence + "3"
+                });
+            }
+        }
+    }
+    return sequence_ranges;
+}
+
+app.post('/xz-range', async (req, response) => {
+    //TODO: Validation
+    const geojson = req.body as FeatureCollection;
+    if (geojson.features.length < 1) {
+        response.status(400).send('Geojson needs to contain a feature.');
+        return;
+    }
+
+    const features = [];
+    for (const feature of geojson.features) {
+        const geometry = wkx.Geometry.parseGeoJSON(feature.geometry);
+        if (geometry instanceof wkx.Polygon) {
+            const ranges = sequence_ranges(bbox(geometry.exteriorRing));
+            console.log(ranges);
+            for (const sequence of ranges) {
+                const border_geom = geometry_from_xzindex(sequence.start);
+                features.push(
+                    {
+                        type: "Feature",
+                        properties: {
+                            sequence: sequence.start
+                        },
+                        geometry: border_geom.toGeoJSON()
+                    });
+           
+            }
+        }
     }
 
     response.send(JSON.stringify({
