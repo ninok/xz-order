@@ -3,36 +3,7 @@
 <head>
     <title>Leaflet Webpack</title>
 <style>
-.flex-container {
-  display: flex;
-  height: 95vh;
-  margin: 0px;
-  padding: 0px;
-  border: 0px;
-}
 
-.flex-map {
-  width: 66%;
-  margin: 0px;
-  padding: 0px;
-  border: 0px;
-}
-.flex-editor {
-  width: 34%;
-  margin: 0px;
-  padding: 0px;
-  border: 0px;
-  /* background-color: #f1f1f1;
-  margin: 10px;
-  padding: 20px;
-  font-size: 30px; */
-}
-.message {
-    position: absolute;
-    left: 30%;
-    top: 2%;
-    z-index: 1000;
-}
 </style>
         
 </head>
@@ -54,14 +25,15 @@
                     </select>
                     <button id="compute">compute</button>
                 </div>
-                <div class="cm-body cm-flex-child-grow">
-                    <div id="editor"></div>
-                    <!-- <textarea id="editor"></textarea> -->
+                <div class="cm-body cm-flex-child-grow" style="height:100%">
+                    <div id="editor" style="height:100%"></div>
                 </div>
                 <div class="cm-footer cm-flex-child-fixed">
-                    <textarea id="result">result</textarea>
                 </div>
             </div>
+            <div class="result-container">
+                <select name="results" id="results" multiple style="width:100%;height:100%;">
+                </select>
             </div>
         </div>
     </div>

@@ -5,6 +5,7 @@ import wkx, { Point } from 'wkx';
 
 import express from 'express';
 import bodyParser from 'body-parser';
+import { xz_order_response } from './response';
 
 const app = express();
 app.use(bodyParser.json());
@@ -100,85 +101,6 @@ function xzindex(geometry : wkx.Geometry) {
     }
     return "";
 }
-
-function geometry_from_xzindex(sequence: string) {
-    let xmin = -1.0;
-    let ymin = -1.0;
-    let xmax = 1.0;
-    let ymax = 1.0;
-
-    // +---+---+
-    // | 2 | 3 |
-    // +---+---+
-    // | 0 | 1 |
-    // +---+---+
-    for (let i = 0; i < sequence.length; ++i) {
-        switch (sequence[i]) {
-            case '0':
-                xmax = (xmin + xmax) / 2;
-                ymax = (ymin + ymax) / 2;
-                break;
-            case '1':
-                xmin = (xmin + xmax) / 2;
-                ymax = (ymin + ymax) / 2;
-                break;
-            case '2':
-                xmax = (xmin + xmax) / 2;
-                ymin = (ymin + ymax) / 2;
-                break;
-            case '3':
-                xmin = (xmin + xmax) / 2;
-                ymin = (ymin + ymax) / 2;
-                break;
-        }
-    }
-
-    // Finally double the extent:
-    xmax += xmax - xmin;
-    ymax += ymax - ymin;
-
-    xmin = xmin * 180;
-    xmax = xmax * 180;
-    ymin = ymin * 90;
-    ymax = ymax * 90;
-
-    return new wkx.Polygon([
-        new Point(xmin, ymin),
-        new Point(xmax, ymin),
-        new Point(xmax, ymax),
-        new Point(xmin, ymax),
-        new Point(xmin, ymin),
-    ]);
-}
-
-app.post('/xz-order', async (req, response) => {
-    //TODO: Validation
-    const geojson = req.body as FeatureCollection;
-    if (geojson.features.length < 1) {
-        response.status(400).send('Geojson needs to contain a feature.');
-        return;
-    }
-
-    const features = [];
-    for (const feature of geojson.features) {
-        const geometry = wkx.Geometry.parseGeoJSON(feature.geometry);
-        const sequence = xzindex(geometry);
-        const border_geom = geometry_from_xzindex(sequence);
-        features.push(
-        {
-            type: "Feature",
-            properties: {
-                sequence
-            },
-            geometry: border_geom.toGeoJSON()
-        });
-    }
-
-    response.send(JSON.stringify({
-        type: "FeatureCollection",
-        features
-    }));
-});
 
 // Check if cell is completely inside box
 function fully_inside(cell : Box, box: Box) {
@@ -290,7 +212,7 @@ function sequence_ranges(box : Box) {
     return sequence_ranges;
 }
 
-app.post('/xz-range', async (req, response) => {
+app.post('/xz-order', async (req, response) => {
     //TODO: Validation
     const geojson = req.body as FeatureCollection;
     if (geojson.features.length < 1) {
@@ -301,29 +223,36 @@ app.post('/xz-range', async (req, response) => {
     const features = [];
     for (const feature of geojson.features) {
         const geometry = wkx.Geometry.parseGeoJSON(feature.geometry);
+        features.push({
+            id: feature.id,
+            sequence: xzindex(geometry)
+        });
+    }
+
+    response.send(JSON.stringify({features}));
+});
+
+app.post('/xz-range', async (req, response) => {
+    //TODO: Validation
+    const geojson = req.body as FeatureCollection;
+    if (geojson.features.length < 1) {
+        response.status(400).send('Geojson needs to contain a feature.');
+        return;
+    }
+
+    const result : xz_order_response = {features: []};
+    for (const feature of geojson.features) {
+        const geometry = wkx.Geometry.parseGeoJSON(feature.geometry);
         if (geometry instanceof wkx.Polygon) {
             const ranges = sequence_ranges(bbox(geometry.exteriorRing));
-            console.log(ranges);
-            for (const sequence of ranges) {
-                const border_geom = geometry_from_xzindex(sequence.start);
-                features.push(
-                    {
-                        type: "Feature",
-                        properties: {
-                            sequence: sequence.start
-                        },
-                        geometry: border_geom.toGeoJSON()
-                    });
-           
-            }
+            result.features.push({
+                id: (feature.id as string) ?? crypto.randomUUID(),
+                ranges
+            });
         }
     }
 
-    response.send(JSON.stringify({
-        type: "FeatureCollection",
-        features
-    }));
-
+    response.send(JSON.stringify(result));
 });
 
 app.listen(3000, () => {
