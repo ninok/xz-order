@@ -17,22 +17,16 @@
             <div id="map" style="width: 100%; height: 100%;""></div>
         </div>
         <div class="flex-editor">
-            <div class="cm-fullscreen-container cm-flex-container">
-                <div class="cm-toolbar cm-flex-child-fixed">
-                    <select id="operation">
-                        <option value="xz-order">xz-order</option>
-                        <option value="xz-range">xz-range</option>
-                    </select>
-                    <button id="compute">compute</button>
-                </div>
-                <div class="cm-body cm-flex-child-grow" style="height:100%">
-                    <div id="editor" style="height:100%"></div>
-                </div>
-                <div class="cm-footer cm-flex-child-fixed">
-                </div>
+            <div>
+                <select id="operation">
+                    <option value="xz-order">xz-order</option>
+                    <option value="xz-range">xz-range</option>
+                </select>
+                <button id="compute">compute</button>
             </div>
+            <div id="editor" class="editor-container"></div>
             <div class="result-container">
-                <select name="results" id="results" multiple style="width:100%;height:100%;">
+                <select name="results" id="results" multiple>
                 </select>
             </div>
         </div>
